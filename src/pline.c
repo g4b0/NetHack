@@ -205,6 +205,9 @@ vpline(const char *line, va_list the_args)
            unlike with the format, it is irrelevant whether the argument
            contains any percent signs */
         line = va_arg(the_args, const char *); /*VA_NEXT(line,const char *);*/
+        /* pline1(text) and friends end up here with a whole message */
+        if (!strchr(line, '%'))
+            line = i18n_gettext(line);
         ln = (int) strlen(line);
     } else {
         /* perform printf() formatting */

@@ -6,6 +6,11 @@
 
 #include "hack.h" /* for config.h+extern.h */
 
+staticfn int utf8_decode_lim(const char *, size_t, int *);
+staticfn boolean utf8_is_mark(int);
+staticfn size_t utf8_cut(const char *, int, size_t);
+staticfn const char *utf8_prev_cp(const char *, const char *);
+
 /*=
     Assorted 'small' utility routines.  They're virtually independent of
     NetHack.
@@ -56,6 +61,15 @@
         int             swapbits        (int, int, int)
         void            nh_snprintf     (const char *, int, char *, size_t,
                                          const char *, ...)
+        boolean         utf8_is_cont    (int)
+        int             utf8_decode     (const char *, int *)
+        int             utf8_cpwidth    (int)
+        int             utf8_nwidth     (const char *, size_t)
+        int             utf8_width      (const char *)
+        int             utf8_len        (const char *)
+        size_t          utf8_cut_cols   (const char *, int)
+        size_t          utf8_cut_bytes  (const char *, size_t)
+        const char *    utf8_prev       (const char *, const char *)
 =*/
 
 /* is 'c' a digit? */
@@ -929,6 +943,253 @@ unicodeval_to_utf8str(int uval, uint8 *buffer, size_t bufsz)
     }
     *b = '\0'; /* NUL terminate */
     return 1;
+}
+
+/*
+ * UTF-8 decoding and display width.  These are deliberately independent of
+ * wchar.h, wcwidth() and the locale; the tty port never calls setlocale().
+ * All of them accept arbitrary bytes: anything that is not well-formed UTF-8
+ * is treated as single bytes of width 1, so every loop over a string makes
+ * progress and nothing reads past the terminating NUL.
+ */
+
+/* is 'c' a UTF-8 continuation byte (10xxxxxx)? */
+boolean
+utf8_is_cont(int c)
+{
+    return (boolean) (((uchar) c & 0xC0) == 0x80);
+}
+
+/* decode one code point from at most 'lim' bytes of 's'; return the number
+   of bytes used (1..4).  Anything invalid, overlong, a surrogate, above
+   U+10FFFF or cut short by 'lim' or by a NUL, uses exactly one byte and
+   yields U+FFFD.  (A genuine U+FFFD uses three bytes, so the length tells
+   the two apart.)  A NUL yields 0 with a length of 1. */
+staticfn int
+utf8_decode_lim(const char *s, size_t lim, int *cpp)
+{
+    const uchar *p = (const uchar *) s;
+    int cp, i, need, minval;
+
+    if (p[0] < 0x80) {
+        *cpp = p[0];
+        return 1;
+    }
+    if (p[0] < 0xC2) { /* continuation byte, or overlong 2-byte lead */
+        need = -1;
+        minval = 0;
+        cp = 0;
+    } else if (p[0] < 0xE0) {
+        need = 1;
+        minval = 0x80;
+        cp = p[0] & 0x1F;
+    } else if (p[0] < 0xF0) {
+        need = 2;
+        minval = 0x800;
+        cp = p[0] & 0x0F;
+    } else if (p[0] < 0xF5) {
+        need = 3;
+        minval = 0x10000;
+        cp = p[0] & 0x07;
+    } else { /* F5..FF: would be above U+10FFFF, or a 5- or 6-byte form */
+        need = -1;
+        minval = 0;
+        cp = 0;
+    }
+    for (i = 1; i <= need; ++i) {
+        if ((size_t) i >= lim || !utf8_is_cont(p[i])) {
+            need = -1;
+            break;
+        }
+        cp = (cp << 6) | (p[i] & 0x3F);
+    }
+    if (need < 0 || cp < minval || cp > 0x10FFFF
+        || (cp >= 0xD800 && cp <= 0xDFFF)) {
+        *cpp = 0xFFFD;
+        return 1;
+    }
+    *cpp = cp;
+    return need + 1;
+}
+
+/* decode the code point at 's' into *cpp (which may be Null); return the
+   number of bytes it uses, 1 to 4 */
+int
+utf8_decode(const char *s, int *cpp)
+{
+    int cp, n;
+
+    n = utf8_decode_lim(s, 4, &cp);
+    if (cpp)
+        *cpp = cp;
+    return n;
+}
+
+/* number of terminal columns used by code point 'cp': 0 for control
+   characters and combining or other zero-width characters, 2 for East Asian
+   wide and fullwidth characters, otherwise 1 */
+int
+utf8_cpwidth(int cp)
+{
+    /* sorted, non-overlapping */
+    static const struct {
+        int lo, hi;
+    } zerowidth[] = {
+        { 0x0300, 0x036F }, /* combining diacritical marks */
+        { 0x1AB0, 0x1AFF }, /* combining diacritical marks extended */
+        { 0x1DC0, 0x1DFF }, /* combining diacritical marks supplement */
+        { 0x200B, 0x200F }, /* zero width space, joiners, direction marks */
+        { 0x20D0, 0x20FF }, /* combining marks for symbols */
+        { 0xFE00, 0xFE0F }  /* variation selectors */
+    }, wide[] = {
+        { 0x1100, 0x115F },   /* Hangul Jamo */
+        { 0x2E80, 0x303E },   /* CJK radicals .. CJK symbols (not 303F) */
+        { 0x3040, 0xA4CF },   /* kana .. Yi */
+        { 0xAC00, 0xD7A3 },   /* Hangul syllables */
+        { 0xF900, 0xFAFF },   /* CJK compatibility ideographs */
+        { 0xFE30, 0xFE4F },   /* CJK compatibility forms */
+        { 0xFF00, 0xFF60 },   /* fullwidth forms */
+        { 0xFFE0, 0xFFE6 },   /* fullwidth signs */
+        { 0x1F300, 0x1F64F }, /* pictographs and emoticons */
+        { 0x1F900, 0x1F9FF }, /* supplemental symbols and pictographs */
+        { 0x20000, 0x3FFFD }  /* CJK extensions B and up */
+    };
+    int i;
+
+    if (cp < 0x20 || (cp >= 0x7F && cp < 0xA0)) /* C0, DEL, C1 */
+        return 0;
+    if (cp < 0x300) /* the common case */
+        return 1;
+    for (i = 0; i < SIZE(zerowidth); ++i)
+        if (cp >= zerowidth[i].lo && cp <= zerowidth[i].hi)
+            return 0;
+    for (i = 0; i < SIZE(wide); ++i)
+        if (cp >= wide[i].lo && cp <= wide[i].hi)
+            return 2;
+    return 1;
+}
+
+/* is 'cp' a mark which belongs to the character before it? */
+staticfn boolean
+utf8_is_mark(int cp)
+{
+    return (boolean) (cp >= 0x300 && utf8_cpwidth(cp) == 0);
+}
+
+/* display width of the first 'n' bytes of 's' (stopping early at a NUL);
+   a character cut short by 'n' counts as invalid bytes, one column each */
+int
+utf8_nwidth(const char *s, size_t n)
+{
+    size_t used = 0;
+    int cp, width = 0;
+
+    while (used < n && s[used]) {
+        used += utf8_decode_lim(s + used, n - used, &cp);
+        width += utf8_cpwidth(cp);
+    }
+    return width;
+}
+
+/* display width of a NUL-terminated string */
+int
+utf8_width(const char *s)
+{
+    return utf8_nwidth(s, (size_t) -1);
+}
+
+/* number of code points in a string; each invalid byte counts as one */
+int
+utf8_len(const char *s)
+{
+    int count = 0;
+
+    while (*s) {
+        s += utf8_decode(s, (int *) 0);
+        ++count;
+    }
+    return count;
+}
+
+/* return the largest byte offset into 's' such that the text before it is
+   at most 'maxcols' columns (-1: no limit) and 'maxbytes' bytes, and the
+   cut is between characters, never between a character and the combining
+   marks that follow it; if the first character of a cluster does not fit,
+   none of it is taken */
+staticfn size_t
+utf8_cut(const char *s, int maxcols, size_t maxbytes)
+{
+    size_t pos = 0, best = 0;
+    int cp, cols = 0, cw;
+
+    while (s[pos]) {
+        pos += utf8_decode(s + pos, &cp);
+        cw = utf8_cpwidth(cp);
+        while (s[pos]) {
+            int n = utf8_decode(s + pos, &cp);
+
+            if (!utf8_is_mark(cp))
+                break;
+            pos += n;
+        }
+        if ((maxcols >= 0 && cw > maxcols - cols) || pos > maxbytes)
+            break;
+        cols += cw;
+        best = pos;
+    }
+    return best;
+}
+
+/* byte offset at which to cut 's' to fit in 'maxcols' columns */
+size_t
+utf8_cut_cols(const char *s, int maxcols)
+{
+    return utf8_cut(s, maxcols < 0 ? 0 : maxcols, (size_t) -1);
+}
+
+/* byte offset at which to cut 's' to fit in 'maxbytes' bytes */
+size_t
+utf8_cut_bytes(const char *s, size_t maxbytes)
+{
+    return utf8_cut(s, -1, maxbytes);
+}
+
+/* start of the character which ends just before 'p', for p > start, where
+   'start' is the beginning of the buffer; moves back at least one byte */
+staticfn const char *
+utf8_prev_cp(const char *start, const char *p)
+{
+    const char *q = p - 1;
+    int cp, back = 0;
+
+    /* at most three continuation bytes can belong to a lead byte */
+    while (q > start && back < 3 && utf8_is_cont(*q)) {
+        --q;
+        ++back;
+    }
+    if (utf8_decode_lim(q, (size_t) (p - q), &cp) == (int) (p - q))
+        return q;
+    return p - 1; /* not a well-formed character: just the one byte */
+}
+
+/* given the start of a buffer and a pointer 'p' into it (at a character
+   boundary, or at the terminating NUL), return the start of the previous
+   character, including any combining marks that follow its base; returns
+   'start' if there is nothing before 'p'.  Never reads at or beyond 'p'. */
+const char *
+utf8_prev(const char *start, const char *p)
+{
+    const char *q;
+    int cp;
+
+    while (p > start) {
+        q = utf8_prev_cp(start, p);
+        (void) utf8_decode_lim(q, (size_t) (p - q), &cp);
+        p = q;
+        if (!utf8_is_mark(cp))
+            break;
+    }
+    return p;
 }
 
 int

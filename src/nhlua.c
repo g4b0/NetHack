@@ -58,6 +58,12 @@ staticfn int nhl_makesingular(lua_State *);
 staticfn int nhl_s_suffix(lua_State *);
 staticfn int nhl_ing_suffix(lua_State *);
 staticfn int nhl_an(lua_State *);
+staticfn int nhl_utf8_decode(lua_State *);
+staticfn int nhl_utf8_width(lua_State *);
+staticfn int nhl_utf8_len(lua_State *);
+staticfn int nhl_utf8_cut(lua_State *);
+staticfn int nhl_utf8_cutbytes(lua_State *);
+staticfn int nhl_utf8_prev(lua_State *);
 staticfn int nhl_rn2(lua_State *);
 staticfn int nhl_random(lua_State *);
 staticfn int nhl_level_difficulty(lua_State *);
@@ -911,6 +917,109 @@ nhl_an(lua_State *L)
     else
         nhl_error(L, "Wrong args");
 
+    return 1;
+}
+
+/* The utf8_*() bindings exist for test/test_utf8.lua.  Offsets are 0-based
+   byte offsets, as in C. */
+
+/* cp, nbytes = utf8_decode("str", offset) */
+staticfn int
+nhl_utf8_decode(lua_State *L)
+{
+    size_t len;
+    const char *str = luaL_checklstring(L, 1, &len);
+    lua_Integer off = luaL_checkinteger(L, 2);
+    int cp, n;
+
+    luaL_argcheck(L, off >= 0 && (size_t) off <= len, 2, "bad offset");
+    n = utf8_decode(str + off, &cp);
+    lua_pushinteger(L, cp);
+    lua_pushinteger(L, n);
+    return 2;
+}
+
+/* utf8_width("str"); utf8_width("str", nbytes) */
+staticfn int
+nhl_utf8_width(lua_State *L)
+{
+    const char *str = luaL_checkstring(L, 1);
+    int argc = lua_gettop(L);
+
+    if (argc == 1) {
+        lua_pushinteger(L, utf8_width(str));
+    } else if (argc == 2) {
+        lua_Integer n = luaL_checkinteger(L, 2);
+
+        lua_pushinteger(L, utf8_nwidth(str, n < 0 ? 0 : (size_t) n));
+    } else
+        nhl_error(L, "Wrong args");
+
+    return 1;
+}
+
+/* utf8_len("str") */
+staticfn int
+nhl_utf8_len(lua_State *L)
+{
+    int argc = lua_gettop(L);
+
+    if (argc == 1)
+        lua_pushinteger(L, utf8_len(luaL_checkstring(L, 1)));
+    else
+        nhl_error(L, "Wrong args");
+
+    return 1;
+}
+
+/* offset = utf8_cut("str", columns) */
+staticfn int
+nhl_utf8_cut(lua_State *L)
+{
+    int argc = lua_gettop(L);
+
+    if (argc == 2) {
+        const char *str = luaL_checkstring(L, 1);
+
+        lua_pushinteger(L, (lua_Integer) utf8_cut_cols(str,
+                                    (int) luaL_checkinteger(L, 2)));
+    } else {
+        nhl_error(L, "Wrong args");
+    }
+
+    return 1;
+}
+
+/* offset = utf8_cutbytes("str", nbytes) */
+staticfn int
+nhl_utf8_cutbytes(lua_State *L)
+{
+    int argc = lua_gettop(L);
+    lua_Integer n;
+
+    if (argc == 2) {
+        const char *str = luaL_checkstring(L, 1);
+
+        n = luaL_checkinteger(L, 2);
+        lua_pushinteger(L, (lua_Integer) utf8_cut_bytes(str,
+                                            n < 0 ? 0 : (size_t) n));
+    } else {
+        nhl_error(L, "Wrong args");
+    }
+
+    return 1;
+}
+
+/* offset = utf8_prev("str", offset) */
+staticfn int
+nhl_utf8_prev(lua_State *L)
+{
+    size_t len;
+    const char *str = luaL_checklstring(L, 1, &len);
+    lua_Integer off = luaL_checkinteger(L, 2);
+
+    luaL_argcheck(L, off >= 0 && (size_t) off <= len, 2, "bad offset");
+    lua_pushinteger(L, utf8_prev(str, str + off) - str);
     return 1;
 }
 
@@ -1871,6 +1980,12 @@ static const struct luaL_Reg nhl_functions[] = {
     { "s_suffix", nhl_s_suffix },
     { "ing_suffix", nhl_ing_suffix },
     { "an", nhl_an },
+    { "utf8_decode", nhl_utf8_decode },
+    { "utf8_width", nhl_utf8_width },
+    { "utf8_len", nhl_utf8_len },
+    { "utf8_cut", nhl_utf8_cut },
+    { "utf8_cutbytes", nhl_utf8_cutbytes },
+    { "utf8_prev", nhl_utf8_prev },
     { "rn2", nhl_rn2 },
     { "random", nhl_random },
     { "level_difficulty", nhl_level_difficulty },

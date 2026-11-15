@@ -1167,7 +1167,7 @@ dmore(
     if (flags.standout)
         standoutbeg();
     xputs(prompt);
-    ttyDisplay->curx += strlen(prompt);
+    ttyDisplay->curx += utf8_width(prompt);
     if (flags.standout)
         standoutend();
 
@@ -1333,7 +1333,8 @@ process_menu_window(winid window, struct WinDesc *cw)
 {
     tty_menu_item *page_start, *page_end, *curr;
     long count;
-    int n, attr_n, curr_page, page_lines, resp_len, previous_page_lines;
+    int n, lim, attr_n, curr_page, page_lines, resp_len,
+        previous_page_lines;
     boolean finished, counting, reset_count, show_obj_syms,
             only_if_no_headers = (iflags.menuobjsyms & 4) != 0;
     char *cp, *rp, resp[QBUFSZ], gacc[QBUFSZ], *msave, *morestr, really_morc;
@@ -1456,15 +1457,16 @@ process_menu_window(winid window, struct WinDesc *cw)
                      * actually output the character.  We're faster doing
                      * this.
                      */
-                    for (n = 0, cp = curr->str;
-                         *cp &&
 #ifndef WIN32CON
-                            (int) ++ttyDisplay->curx < (int) ttyDisplay->cols;
+                    lim = (int) utf8_cut_cols(curr->str,
+                                              (int) ttyDisplay->cols - 1
+                                              - ttyDisplay->curx);
 #else
-                            (int) ttyDisplay->curx < (int) ttyDisplay->cols;
-                         ttyDisplay->curx++,
+                    lim = (int) utf8_cut_cols(curr->str,
+                                              (int) ttyDisplay->cols
+                                              - ttyDisplay->curx);
 #endif
-                         cp++, n++) {
+                    for (n = 0, cp = curr->str; n < lim; cp++, n++) {
                         if (n == attr_n && (color != NO_COLOR
                                             || attr != ATR_NONE))
                             toggle_menu_attr(TRUE, color, attr);
@@ -1488,6 +1490,13 @@ process_menu_window(winid window, struct WinDesc *cw)
                             (void) putchar(*cp);
                         }
                     } /* for *cp */
+                    /* columns used; the cursor was counted one column
+                       past the last one printed if the line was cut */
+                    ttyDisplay->curx += utf8_nwidth(curr->str, lim)
+#ifndef WIN32CON
+                                        + (curr->str[lim] ? 1 : 0)
+#endif
+                                        ;
                     if (n > attr_n && (color != NO_COLOR || attr != ATR_NONE))
                         toggle_menu_attr(FALSE, color, attr);
                 } /* if npages > 0 */
@@ -1550,7 +1559,7 @@ process_menu_window(winid window, struct WinDesc *cw)
             dmore(cw, resp);
         } else {
             /* just put the cursor back... */
-            tty_curs(window, (int) strlen(cw->morestr) + 2, page_lines);
+            tty_curs(window, utf8_width(cw->morestr) + 2, page_lines);
             xwaitforspace(resp);
         }
 
@@ -1773,9 +1782,9 @@ process_menu_window(winid window, struct WinDesc *cw)
 static void
 process_text_window(winid window, struct WinDesc *cw)
 {
-    int i, n, attr;
+    int i, n, attr, lim;
     boolean linestart;
-    char *cp;
+    char *cp, *lp;
 
     for (n = 0, i = 0; i < cw->maxrow; i++) {
         HUPSKIP();
@@ -1808,22 +1817,22 @@ process_text_window(winid window, struct WinDesc *cw)
                 ++ttyDisplay->curx;
             }
             term_start_attr(attr);
-            for (cp = &cw->data[i][1], linestart = TRUE;
+            lp = &cw->data[i][1];
 #ifndef WIN32CON
-                 *cp && (int) ++ttyDisplay->curx < (int) ttyDisplay->cols;
-                 cp++
+            lim = (int) utf8_cut_cols(lp, (int) ttyDisplay->cols - 1
+                                          - ttyDisplay->curx);
 #else
-                 *cp && (int) ttyDisplay->curx < (int) ttyDisplay->cols;
-                 cp++, ttyDisplay->curx++
+            lim = (int) utf8_cut_cols(lp, (int) ttyDisplay->cols
+                                          - ttyDisplay->curx);
 #endif
-                 ) {
+            for (cp = lp, linestart = TRUE; cp < lp + lim; cp++) {
                 /* message recall for msg_window:full/combination/reverse
                    might have output from '/' in it (see redotoplin()) */
                 if (linestart) {
-                    if (SYMHANDLING(H_UTF8)) {
+                    if (SYMHANDLING(H_UTF8) && utf8_decode(cp, 0) == 1) {
                         /* FIXME: what is actually in that line? is it the \GNNNNNNNN or UTF-8? */
                         g_putch(*cp);
-                    } else if ((*cp & 0x80) != 0) {
+                    } else if ((*cp & 0x80) != 0 && utf8_decode(cp, 0) == 1) {
                         g_putch(*cp);
                         end_glyphout();
                     } else {
@@ -1834,6 +1843,12 @@ process_text_window(winid window, struct WinDesc *cw)
                     (void) putchar(*cp);
                 }
             }
+            /* columns used (counting one past a cut line, as before) */
+            ttyDisplay->curx += utf8_nwidth(lp, lim)
+#ifndef WIN32CON
+                                + (lp[lim] ? 1 : 0)
+#endif
+                                ;
             term_end_attr(attr);
         }
     }
@@ -2203,7 +2218,7 @@ compress_str(const char *str)
     /* compress out consecutive spaces if line is too long;
        topline wrapping converts space at wrap point into newline,
        we reverse that here */
-    if ((int) strlen(str) >= CO || strchr(str, '\n')) {
+    if (utf8_width(str) >= CO || strchr(str, '\n')) {
         const char *in_str = str;
         char c, *outstr = cbuf, *outend = &cbuf[sizeof cbuf - 1];
         boolean was_space = TRUE; /* True discards all leading spaces;
@@ -2341,11 +2356,12 @@ tty_putstr(winid window, int attr, const char *str)
     case NHW_MAP:
         tty_curs(window, cw->curx + 1, cw->cury);
         term_start_attr(attr);
-        while (*str && (int) ttyDisplay->curx < (int) ttyDisplay->cols - 1) {
-            (void) putchar(*str);
-            str++;
-            ttyDisplay->curx++;
-        }
+        /* as many whole characters as fit, counted in columns */
+        n0 = (long) utf8_cut_cols(str, (int) ttyDisplay->cols - 1
+                                       - ttyDisplay->curx);
+        ttyDisplay->curx += utf8_nwidth(str, (size_t) n0);
+        while (n0-- > 0)
+            (void) putchar(*str++);
         cw->curx = 0;
         cw->cury++;
         term_end_attr(attr);
@@ -2354,14 +2370,21 @@ tty_putstr(winid window, int attr, const char *str)
         tty_curs(window, cw->curx + 1, cw->cury);
         term_start_attr(attr);
         while (*str) {
-            if ((int) ttyDisplay->curx >= (int) ttyDisplay->cols - 1) {
+            int cp, w, n = utf8_decode(str, &cp);
+
+            /* a stray byte is one column, as it always was */
+            w = (n > 1) ? utf8_cpwidth(cp) : 1;
+            if (w > 0 && (int) ttyDisplay->curx + w
+                         > (int) ttyDisplay->cols - 1) {
                 cw->curx = 0;
                 cw->cury++;
                 tty_curs(window, cw->curx + 1, cw->cury);
             }
-            (void) putchar(*str);
-            str++;
-            ttyDisplay->curx++;
+            while (n-- > 0) {
+                (void) putchar(*str);
+                str++;
+            }
+            ttyDisplay->curx += w;
         }
         cw->curx = 0;
         cw->cury++;
@@ -2408,13 +2431,15 @@ tty_putstr(winid window, int attr, const char *str)
         *ob++ = (char) (attr + 1); /* avoid nuls, for convenience */
         Strcpy(ob, str);
 
+        n0 = (long) utf8_width(str) + 1L; /* columns, from here on */
         if (n0 > cw->maxcol)
             cw->maxcol = n0;
         if (++cw->cury > cw->maxrow)
             cw->maxrow = cw->cury;
         if (n0 > CO) {
             /* attempt to break the line */
-            for (i = CO - 1; i && str[i] != ' ' && str[i] != '\n';)
+            for (i = (long) utf8_cut_cols(str, CO - 1);
+                 i && str[i] != ' ' && str[i] != '\n';)
                 i--;
             if (i) {
                 cw->data[cw->cury - 1][++i] = '\0';
@@ -2731,10 +2756,10 @@ tty_end_menu(
         }
 
         /* cut off any lines that are too long */
-        len = strlen(curr->str) + 2; /* extra space at beg & end */
+        len = utf8_width(curr->str) + 2; /* extra space at beg & end */
         if (len > (int) ttyDisplay->cols) {
-            curr->str[ttyDisplay->cols - 2] = 0;
-            len = ttyDisplay->cols;
+            curr->str[utf8_cut_cols(curr->str, ttyDisplay->cols - 2)] = 0;
+            len = utf8_width(curr->str) + 2;
         }
         if (len > cw->cols)
             cw->cols = len;
@@ -2748,17 +2773,17 @@ tty_end_menu(
         char buf[QBUFSZ];
         /* produce the largest demo string */
         Sprintf(buf, "(%ld of %ld) ", cw->npages, cw->npages);
-        len = strlen(buf);
+        len = utf8_width(buf);
         cw->morestr = dupstr("");
     } else {
         cw->morestr = dupstr("(end) ");
-        len = strlen(cw->morestr);
+        len = utf8_width(cw->morestr);
     }
 
     if (len > (int) ttyDisplay->cols) {
         /* truncate the prompt if it's too long for the screen */
         if (cw->npages <= 1) /* only str in single page case */
-            cw->morestr[ttyDisplay->cols] = 0;
+            cw->morestr[utf8_cut_cols(cw->morestr, ttyDisplay->cols)] = 0;
         len = ttyDisplay->cols;
     }
     if (len > cw->cols)
@@ -4520,7 +4545,7 @@ tty_status_update(
         tty_status[NOW][fldidx].idx = fldidx;
         tty_status[NOW][fldidx].color = (color & 0x00FF);
         tty_status[NOW][fldidx].attr = term_attr_fixup(attrmask);
-        tty_status[NOW][fldidx].lth = strlen(status_vals[fldidx]);
+        tty_status[NOW][fldidx].lth = utf8_width(status_vals[fldidx]);
         tty_status[NOW][fldidx].valid = TRUE;
         tty_status[NOW][fldidx].dirty = TRUE;
         tty_status[NOW][fldidx].sanitycheck = TRUE;
@@ -4713,7 +4738,7 @@ check_fields(boolean forcefields, int sz[MAX_STATUS_ROWS])
                         ob = &cw->data[row][c];
                         nb = status_vals[idx];
                         while (*nb && c < cw->cols) {
-                            if (*nb != *ob)
+                            if (*nb != *ob || (*nb & 0x80))
                                 break;
                             nb++;
                             ob++;
@@ -4808,7 +4833,7 @@ status_sanity_check(void)
 static void
 tty_putstatusfield(const char *text, int x, int y)
 {
-    int i, n, ncols, nrows, lth = 0;
+    int i, n, ncols, nrows;
     struct WinDesc *cw = 0;
 
     if (WIN_STATUS == WIN_ERR
@@ -4817,22 +4842,31 @@ tty_putstatusfield(const char *text, int x, int y)
 
     ncols = cw->cols;
     nrows = cw->maxrow;
-    lth = (int) strlen(text);
 
     print_vt_code2(AVTC_SELECT_WINDOW, NHW_STATUS);
 
     if (x < ncols && y < nrows) {
         if (x != cw->curx || y != cw->cury)
             tty_curs(NHW_STATUS, x, y);
-        for (i = 0; i < lth; ++i) {
+        /* i is the number of columns used so far */
+        for (i = 0; *text && i + x < ncols; ) {
+            int cp, w, nb = utf8_decode(text, &cp);
+
+            w = (nb > 1) ? utf8_cpwidth(cp) : 1; /* stray byte: 1 */
+            if (i + x + w > ncols)
+                break; /* wide character which does not fit */
             n = i + x;
-            if (n < ncols && *text) {
-                (void) putchar(*text);
-                ttyDisplay->curx++;
-                cw->curx++;
-                cw->data[y][n - 1] = *text;
-                text++;
-            }
+            while (nb-- > 0)
+                (void) putchar(*text++);
+            ttyDisplay->curx += w;
+            cw->curx += w;
+            /* data[] has a byte per column; anything which is not ASCII
+               is a placeholder there (and both columns of a wide one) */
+            if (w > 0)
+                cw->data[y][n - 1] = (text[-1] & 0x80) ? '\200' : text[-1];
+            if (w > 1)
+                cw->data[y][n] = '\200';
+            i += w;
         }
     }
 #if 0
@@ -4856,7 +4890,7 @@ set_condition_length(void)
         for (c = 0; c < SIZE(conditions); ++c) {
             mask = conditions[c].mask;
             if ((tty_condition_bits & mask) == mask)
-                lth += 1 + (int) strlen(conditions[c].text[cond_shrinklvl]);
+                lth += 1 + utf8_width(conditions[c].text[cond_shrinklvl]);
         }
     }
     tty_status[NOW][BL_CONDITION].lth = lth;
@@ -4870,7 +4904,7 @@ shrink_enc(int lvl)
         enc_shrinklvl = lvl;
         Sprintf(status_vals[BL_CAP], " %s", encvals[lvl][enclev]);
     }
-    tty_status[NOW][BL_CAP].lth = strlen(status_vals[BL_CAP]);
+    tty_status[NOW][BL_CAP].lth = utf8_width(status_vals[BL_CAP]);
 }
 
 static void
@@ -4885,7 +4919,8 @@ shrink_dlvl(int lvl)
         Strcpy(buf, (lvl == 0) ? "Dlvl" : "Dl");
         Strcat(buf, levval);
         Strcpy(status_vals[BL_LEVELDESC], buf);
-        tty_status[NOW][BL_LEVELDESC].lth = strlen(status_vals[BL_LEVELDESC]);
+        tty_status[NOW][BL_LEVELDESC].lth
+            = utf8_width(status_vals[BL_LEVELDESC]);
     }
 }
 
@@ -5099,7 +5134,7 @@ render_status(void)
                                 bits = 0L; /* skip any remaining conditions */
                             }
                             tty_putstatusfield(condtext, x, y);
-                            x += (int) strlen(condtext);
+                            x += utf8_width(condtext);
                             if (iflags.hilite_delta) {
                                 if (coloridx != NO_COLOR)
                                     term_end_color();
@@ -5128,20 +5163,25 @@ render_status(void)
                      */
                     /* hitpointbar using hp percent calculation */
                     int bar_len, bar_pos = 0;
-                    char bar[30 + 1], *bar2 = (char *) 0, savedch = '\0';
+                    char bar[BUFSZ], *bar2 = (char *) 0, savedch = '\0';
                     boolean twoparts = (hpbar_percent < 100);
 
-                    /* force exactly 30 characters, padded with spaces
+                    /* force exactly 30 columns, padded with spaces
                        if shorter or truncated if longer */
-                    if (strlen(text) != 30) {
-                        Sprintf(bar, "%-30.30s", text);
-                        Strcpy(status_vals[BL_TITLE], bar);
+                    if (utf8_width(text) != 30) {
+                        int cut = (int) utf8_cut_cols(text, 30);
+
+                        Sprintf(bar, "%.*s%*s", cut, text,
+                                30 - utf8_nwidth(text, (size_t) cut), "");
+                        cut = (int) utf8_cut_bytes(bar, MAXVALWIDTH - 1);
+                        (void) strncpy(status_vals[BL_TITLE], bar, cut);
+                        status_vals[BL_TITLE][cut] = '\0';
                     } else {
                         Strcpy(bar, text);
                     }
                     if (hpbar_crit_hp)
                         repad_with_dashes(bar);
-                    bar_len = (int) strlen(bar); /* always 30 */
+                    bar_len = utf8_width(bar); /* always 30 */
                     /*tlth = bar_len + 2; // not needed within this 'if'*/
                     attrmask = 0; /* for the second part only case: dead */
                     /* when at full HP, the whole title will be highlighted;
@@ -5154,7 +5194,7 @@ render_status(void)
                             bar_pos = 1;
                         if (bar_pos >= bar_len && hpbar_percent < 100)
                             bar_pos = bar_len - 1;
-                        bar2 = &bar[bar_pos];
+                        bar2 = &bar[utf8_cut_cols(bar, bar_pos)];
                         savedch = *bar2;
                         *bar2 = '\0';
                     }
@@ -5166,7 +5206,7 @@ render_status(void)
                         if (iflags.hilite_delta && coloridx != NO_COLOR)
                             term_start_color(coloridx);
                         tty_putstatusfield(bar, x, y);
-                        x += (int) strlen(bar);
+                        x += utf8_width(bar);
                         if (iflags.hilite_delta && coloridx != NO_COLOR)
                             term_end_color();
                         End_Attr(attrmask);
@@ -5176,7 +5216,7 @@ render_status(void)
                             term_start_attr(ATR_BLINK);
                         *bar2 = savedch;
                         tty_putstatusfield(bar2, x, y);
-                        x += (int) strlen(bar2);
+                        x += utf8_width(bar2);
                         if ((attrmask & HL_BLINK) != 0)
                             term_end_attr(ATR_BLINK);
                     }
@@ -5232,7 +5272,7 @@ render_status(void)
                             term_start_color(coloridx);
                     }
                     tty_putstatusfield(text, x, y);
-                    x += (int) strlen(text);
+                    x += utf8_width(text);
                     if (iflags.hilite_delta) {
                         if (coloridx != NO_COLOR)
                             term_end_color();

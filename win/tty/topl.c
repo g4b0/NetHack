@@ -12,6 +12,7 @@
 
 static void redotoplin(const char *);
 static void topl_putsym(char);
+static void topl_putmb(const char *, int, int);
 static void removetopl(int);
 static void msghistory_snapshot(boolean);
 static void free_msghistory_snapshot(boolean);
@@ -125,7 +126,8 @@ redotoplin(const char *str)
 
     home();
     if (!ttyDisplay->topl_utf8) {
-        if (ttyDisplay->mixed && (*str & 0x80)) {
+        /* a well-formed UTF-8 character is text, not a symset character */
+        if (ttyDisplay->mixed && (*str & 0x80) && utf8_decode(str, 0) == 1) {
             /* kludge for the / command, the only time we ever want a */
             /* graphics character on the top line */
             g_putch((int) *str++);
@@ -258,11 +260,12 @@ update_topl(const char *bp)
 
     /* If there is room on the line, print message on same line */
     /* But messages like "You die..." deserve their own line */
-    n0 = strlen(bp);
+    n0 = utf8_width(bp); /* display columns */
     if ((ttyDisplay->toplin == TOPLINE_NEED_MORE || skip)
         && cw->cury == 0
         /* room for --More-- */
-        && n0 + (int) strlen(gt.toplines) + 3 < min(CO - 8, TBUFSZ)
+        && n0 + utf8_width(gt.toplines) + 3 < min(CO - 8, TBUFSZ)
+        && strlen(bp) + strlen(gt.toplines) + 3 < TBUFSZ
         && (notdied = strncmp(bp, "You die", 7)) != 0) {
         Strcat(gt.toplines, "  ");
         Strcat(gt.toplines, bp);
@@ -284,7 +287,7 @@ update_topl(const char *bp)
 
     for (tl = gt.toplines; n0 >= CO; ) {
         otl = tl;
-        for (tl += CO - 1; tl != otl; --tl)
+        for (tl += utf8_cut_cols(tl, CO - 1); tl != otl; --tl)
             if (*tl == ' ')
                 break;
         if (tl == otl) {
@@ -294,7 +297,7 @@ update_topl(const char *bp)
                 break; /* No choice but to spit it out whole. */
         }
         *tl++ = '\n';
-        n0 = strlen(tl);
+        n0 = utf8_width(tl);
     }
     if (!notdied) /* double negative => "You die"; avoid suppressing mesg */
         cw->flags &= ~WIN_STOP, skip = FALSE;
@@ -349,14 +352,42 @@ topl_putsym(char c)
 #endif
 }
 
+/* write one multibyte character of 'n' bytes and 'w' (0 to 2) columns */
+static void
+topl_putmb(const char *s, int n, int w)
+{
+    struct WinDesc *cw = wins[WIN_MESSAGE];
+
+    if (cw == (struct WinDesc *) 0)
+        panic("Putsym window MESSAGE nonexistent");
+
+    if (w > 0 && ttyDisplay->curx + w > CO - 1)
+        topl_putsym('\n'); /* does not fit; same limit as one column */
+    ttyDisplay->curx += w;
+    cw->curx = ttyDisplay->curx;
+    while (n-- > 0)
+        (void) putchar(*s++);
+}
+
 void
 putsyms(const char *str)
 {
+    int cp, n;
+
 #ifdef WIN32CON
     str = win32con_topl_fixup(str);
 #endif
-    while (*str)
-        topl_putsym(*str++);
+    while (*str) {
+        /* anything which is not well-formed UTF-8 is one byte, one column,
+           as it has always been */
+        n = utf8_decode(str, &cp);
+        if (n > 1) {
+            topl_putmb(str, n, utf8_cpwidth(cp));
+            str += n;
+        } else {
+            topl_putsym(*str++);
+        }
+    }
 }
 
 static void

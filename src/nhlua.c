@@ -67,6 +67,9 @@ staticfn int nhl_utf8_prev(lua_State *);
 staticfn int nhl_gettext(lua_State *);
 staticfn int nhl_ngettext(lua_State *);
 staticfn int nhl_language(lua_State *);
+staticfn int nhl_i18n_format_common(lua_State *, int, size_t);
+staticfn int nhl_i18n_format(lua_State *);
+staticfn int nhl_i18n_format_n(lua_State *);
 staticfn int nhl_rn2(lua_State *);
 staticfn int nhl_random(lua_State *);
 staticfn int nhl_level_difficulty(lua_State *);
@@ -1077,6 +1080,105 @@ nhl_language(lua_State *L)
     return 2;
 }
 
+/* Test hook for test/test_i18n.lua: format through i18n_vsnprintf(); Lua
+   strings are passed as char *, integers as int, at most three of them.
+   The first of these returns the text; the second takes a buffer size
+   first and also returns the length the text would have had. */
+staticfn int
+nhl_i18n_format_common(lua_State *L, int fmtidx, size_t siz)
+{
+    char buf[BUFSZ * 10];
+    const char *fmt = luaL_checkstring(L, fmtidx), *sv[3] = { 0, 0, 0 };
+    int iv[3] = { 0, 0, 0 };
+    int i, mask = 0, ret = 0, n = lua_gettop(L) - fmtidx;
+
+    if (n > 3)
+        nhl_error(L, "Wrong args");
+    for (i = 0; i < n; ++i) {
+        if (lua_type(L, fmtidx + 1 + i) == LUA_TSTRING) {
+            mask |= 1 << i;
+            sv[i] = lua_tostring(L, fmtidx + 1 + i);
+        } else {
+            iv[i] = (int) luaL_checkinteger(L, fmtidx + 1 + i);
+        }
+    }
+    if (siz > sizeof buf)
+        siz = sizeof buf;
+    buf[0] = '\0';
+    switch (n) {
+    case 0:
+        ret = i18n_snprintf(buf, siz, fmt);
+        break;
+    case 1:
+        ret = (mask & 1) ? i18n_snprintf(buf, siz, fmt, sv[0])
+                         : i18n_snprintf(buf, siz, fmt, iv[0]);
+        break;
+    case 2:
+        switch (mask) {
+        case 0:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], iv[1]);
+            break;
+        case 1:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], iv[1]);
+            break;
+        case 2:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], sv[1]);
+            break;
+        default:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], sv[1]);
+            break;
+        }
+        break;
+    default:
+        switch (mask) {
+        case 0:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], iv[1], iv[2]);
+            break;
+        case 1:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], iv[1], iv[2]);
+            break;
+        case 2:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], sv[1], iv[2]);
+            break;
+        case 3:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], sv[1], iv[2]);
+            break;
+        case 4:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], iv[1], sv[2]);
+            break;
+        case 5:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], iv[1], sv[2]);
+            break;
+        case 6:
+            ret = i18n_snprintf(buf, siz, fmt, iv[0], sv[1], sv[2]);
+            break;
+        default:
+            ret = i18n_snprintf(buf, siz, fmt, sv[0], sv[1], sv[2]);
+            break;
+        }
+        break;
+    }
+    lua_pushstring(L, buf);
+    lua_pushinteger(L, ret);
+    return 2;
+}
+
+/* i18n_format("fmt %s %d", "str", 5) */
+staticfn int
+nhl_i18n_format(lua_State *L)
+{
+    (void) nhl_i18n_format_common(L, 1, (size_t) BUFSZ * 10);
+    lua_pop(L, 1); /* leave just the text */
+    return 1;
+}
+
+/* i18n_format_n(8, "fmt %s %d", "str", 5) */
+staticfn int
+nhl_i18n_format_n(lua_State *L)
+{
+    return nhl_i18n_format_common(L, 2, (size_t) luaL_checkinteger(L, 1));
+}
+
 /* rn2(10) */
 staticfn int
 nhl_rn2(lua_State *L)
@@ -2043,6 +2145,8 @@ static const struct luaL_Reg nhl_functions[] = {
     { "gettext", nhl_gettext },
     { "ngettext", nhl_ngettext },
     { "language", nhl_language },
+    { "i18n_format", nhl_i18n_format },
+    { "i18n_format_n", nhl_i18n_format_n },
     { "rn2", nhl_rn2 },
     { "random", nhl_random },
     { "level_difficulty", nhl_level_difficulty },

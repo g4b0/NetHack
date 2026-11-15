@@ -180,6 +180,13 @@ vpline(const char *line, va_list the_args)
         dirstr = coord_desc(a11y_mesgxy.x, a11y_mesgxy.y, dirstrbuf,
                             ((iflags.getpos_coords == GPCOORDS_NONE)
                              ? GPCOORDS_COMFULL : iflags.getpos_coords));
+        if (*i18n_language()) {
+            /* "<coords>: <fmt>" is no catalog key, so translate and format
+               first, then prefix the finished text */
+            (void) i18n_vsnprintf(pbuf, sizeof pbuf, line, the_args);
+            pline("%s: %s", dirstr, pbuf);
+            return;
+        }
         tmp = (char *) alloc(strlen(line) + sizeof ": " + strlen(dirstr));
         Strcpy(tmp, dirstr);
         Strcat(tmp, ": ");
@@ -191,6 +198,7 @@ vpline(const char *line, va_list the_args)
 
     if (!strchr(line, '%')) {
         /* format does not specify any substitutions; use it as-is */
+        line = i18n_gettext(line);
         ln = (int) strlen(line);
     } else if (line[0] == '%' && line[1] == 's' && !line[2]) {
         /* "%s" => single string; skip format and use its first argument;
@@ -200,7 +208,7 @@ vpline(const char *line, va_list the_args)
         ln = (int) strlen(line);
     } else {
         /* perform printf() formatting */
-        ln = vsnprintf(pbuf, sizeof pbuf, line, the_args);
+        ln = i18n_vsnprintf(pbuf, sizeof pbuf, line, the_args);
         line = pbuf;
         /* note: 'ln' is number of characters attempted, not necessarily
            strlen(line); that matters for the overflow check; if we avoid

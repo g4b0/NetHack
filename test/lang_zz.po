@@ -99,5 +99,124 @@ msgstr "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 msgid "after bad"
 msgstr "AFTER"
 
+# ---- format strings ----
+
+# no conversions at all
+msgid "f0 plain text"
+msgstr "F0 testo"
+
+# sequential, reordered, one argument dropped
+msgid "f1 %s and %s."
+msgstr "F1 %s e %s."
+
+msgid "f2 %s and %s."
+msgstr "F2 %2$s, then %1$s."
+
+msgid "f3 %s and %s."
+msgstr "F3 only %2$s."
+
+msgid "f3b %s and %s."
+msgstr "F3B only %1$s."
+
+msgid "f10 %s %s"
+msgstr "F10 %s"
+
+# the same argument twice
+msgid "f9 %s"
+msgstr "F9 %1$s/%1$s"
+
+# flags, width and precision may differ from the English ones
+msgid "f4 %s"
+msgstr "F4 [%-6s]"
+
+msgid "f4b %s"
+msgstr "F4B [%.3s]"
+
+msgid "f4c %s"
+msgstr "F4C [%1$8.2s]"
+
+# integers
+msgid "f5 %d"
+msgstr "F5 %05d"
+
+msgid "f5b %d %s"
+msgstr "F5B %2$s has %1$+d"
+
+msgid "f7 %c"
+msgstr "F7 <%c>"
+
+msgid "f7b %x"
+msgstr "F7B %#x"
+
+# percent signs
+msgid "f6 100%%"
+msgstr "F6 100%% done"
+
+msgid "f6b %d%%"
+msgstr "F6B %d%% done"
+
+# star width and precision, same list as English
+msgid "f8 %*s"
+msgstr "F8 [%*s]"
+
+msgid "f8b %.*s"
+msgstr "F8B %.*s."
+
+# BAD: each of these must fall back to English
+msgid "r1 %s"
+msgstr "R1 %d"
+
+msgid "r2 %s"
+msgstr "R2 %2$s"
+
+msgid "r3 %s"
+msgstr "R3 %s %s"
+
+msgid "r4 %s"
+msgstr "R4 %n"
+
+msgid "r5 %s %s"
+msgstr "R5 %1$s %s"
+
+msgid "r5b %s %s"
+msgstr "R5B %s %1$s"
+
+msgid "r6 %d"
+msgstr "R6 %s"
+
+msgid "r7 %s"
+msgstr "R7 %*s"
+
+msgid "r8 %s"
+msgstr "R8 %1$*s"
+
+msgid "r9 literal"
+msgstr "R9 %d"
+
+msgid "r10 %s"
+msgstr "R10 %q"
+
+msgid "r11 %s"
+msgstr "R11 %"
+
+msgid "r12 %d"
+msgstr "R12 %ld"
+
+msgid "r13 %s"
+msgstr "R13 %0$s"
+
+msgid "r14 %d %d"
+msgstr "R14 %1$d %3$d"
+
+# BAD: English formats we cannot read
+msgid "u1 %f"
+msgstr "U1 %f"
+
+msgid "u2 %zu"
+msgstr "U2 %zu"
+
+msgid "u3 %1$s"
+msgstr "U3 %1$s"
+
 # BAD: msgid with no msgstr at end of file
 msgid "dangling"

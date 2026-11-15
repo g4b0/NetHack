@@ -23,4 +23,9 @@ extern const char *i18n_gettext(const char *);
 extern const char *i18n_pgettext(const char *, const char *);
 extern const char *i18n_ngettext(const char *, const char *, long);
 
+/* vsnprintf() that formats the translation of the format if it has one;
+   otherwise, or if the translation does not fit, the format itself */
+extern int i18n_vsnprintf(char *, size_t, const char *, va_list);
+extern int i18n_snprintf(char *, size_t, const char *, ...);
+
 #endif /* I18N_H */

@@ -116,7 +116,7 @@ HACKFILES := allmain alloc apply artifact attrib ball bones botl \
 	   calendar cfgfiles cmd coloratt dbridge decl detect \
 	   dig display dlb do do_name do_wear dog dogmove dokick \
            dothrow drawing dungeon earlyarg eat end engrave exper explode \
-	   extralev files fountain getpos glyphs hack hacklib iactions \
+	   extralev files fountain getpos glyphs hack hacklib i18n iactions \
 	   insight invent isaac64 light lock mail makemon mcastu mdlib mhitm \
 	   mhitu minion mklev mkmap mkmaze mkobj mkroom mon \
 	   mondata monmove monst mplayer mthrowu muse music \
@@ -700,6 +700,7 @@ $(TARGETPFX)getpos.obj: getpos.c $(HACK_H)
 $(TARGETPFX)glyphs.obj: glyphs.c $(HACK_H)
 $(TARGETPFX)hack.obj: hack.c $(HACK_H)
 $(TARGETPFX)hacklib.obj: hacklib.c $(HACK_H)
+$(TARGETPFX)i18n.obj: i18n.c $(HACK_H) $(INCL)dlb.h
 $(TARGETPFX)iactions.obj: iactions.c $(HACK_H)
 $(TARGETPFX)insight.obj: insight.c $(HACK_H)
 $(TARGETPFX)invent.obj: invent.c $(HACK_H)

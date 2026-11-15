@@ -1,0 +1,65 @@
+# Italian messages for NetHack.
+#
+# Usage: OPTIONS=language:it in the config file or NETHACKOPTIONS.
+#
+# Format: a subset of GNU gettext PO, UTF-8.  The msgid is the English
+# message exactly as it reaches the message window, prefix included:
+# You("hit %s.") is looked up as "You hit %s.".  A translation may drop an
+# argument or reorder them with %1$s, %2$s; it may not use a conversion
+# of a different type than the English one (see src/i18n.c).  Anything
+# untranslated stays English.
+#
+# This file is a starting set, not a complete translation.
+
+msgid ""
+msgstr ""
+"Project-Id-Version: NetHack 5.0\n"
+"Language: it\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Arguments are the greeting, the hero's name and the role description in
+# English; until the grammar interface exists the last one is left out
+# rather than shown half-translated.
+msgid "%s %s, welcome to NetHack!  You are a%s."
+msgstr "%s %s, benvenuto in NetHack!"
+
+msgid "You can't go up here."
+msgstr "Non puoi salire da qui."
+
+msgid "You are carrying too much to get through."
+msgstr "Porti troppo peso per passare."
+
+msgid "You have a sad feeling for a moment, then it passes."
+msgstr "Provi un senso di tristezza per un attimo, poi passa."
+
+msgid "You cannot reach %s."
+msgstr "Non riesci a raggiungere %s."
+
+msgid "You release %s."
+msgstr "Rilasci %s."
+
+msgid "You drop %s down the drain."
+msgstr "Lasci cadere %s nello scarico."
+
+msgid "You swing %s through thin air."
+msgstr "Fendi l'aria con %s."
+
+msgid "You hit yourself with %s."
+msgstr "Ti colpisci con %s."
+
+msgid "%s is in your way."
+msgstr "%s è sulla tua strada."
+
+msgid "%s picks up %s."
+msgstr "%1$s raccoglie %2$s."
+
+# The price comes before the item in Italian.
+msgid "That %s will cost you %ld %s."
+msgstr "Dovrai pagare %2$ld %3$s per %1$s."
+
+# The possessive is dropped: the English pronoun cannot be reused.
+msgid "%s breaks loose of %s leash!"
+msgstr "%s si libera dal guinzaglio!"

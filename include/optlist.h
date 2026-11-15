@@ -413,6 +413,9 @@ static int optfn_##a(int, int, boolean, char *, char *);
     NHOPTB(implicit_uncursed, Advanced, 0, opt_out, set_in_game,
            On, Yes, No, No, NoAlias, &flags.implicit_uncursed, Term_False,
            "omit \"uncursed\" from inventory")
+    NHOPTC(language, Advanced, 8, opt_in, set_in_config,
+                No, Yes, No, No, NoAlias,
+                "language of the messages (needs dat/lang_<code>.po)")
 #if 0   /* obsolete - pre-OSX Mac */
     NHOPTB(large_font, Advanced, 0, opt_in, set_in_config,
            Off, Yes, No, No, NoAlias, &iflags.obsolete,

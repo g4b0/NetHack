@@ -1961,6 +1961,41 @@ optfn_IBMgraphics(
 }
 
 staticfn int
+optfn_language(
+    int optidx, int req, boolean negated UNUSED,
+    char *opts, char *op)
+{
+    int nskipped;
+
+    if (req == do_init) {
+        return optn_ok;
+    }
+    if (req == do_set) {
+        /* language:it reads the catalog dat/lang_it.po; startup only */
+        if ((op = string_for_env_opt(allopt[optidx].name, opts, FALSE))
+            == empty_optstr)
+            return optn_err;
+        if (!i18n_set_language(op)) {
+            config_error_add("Cannot load language '%s'.", op);
+            return optn_err;
+        }
+        if ((nskipped = i18n_skipped()) > 0)
+            config_error_add("Language '%s': %d bad catalog entr%s skipped.",
+                             op, nskipped, (nskipped == 1) ? "y" : "ies");
+        return optn_ok;
+    }
+    if (req == get_val) {
+        Sprintf(opts, "%s", *i18n_language() ? i18n_language() : "none");
+        return optn_ok;
+    }
+    if (req == get_cnf_val) {
+        Strcpy(opts, i18n_language());
+        return optn_ok;
+    }
+    return optn_ok;
+}
+
+staticfn int
 optfn_map_mode(
     int optidx, int req, boolean negated,
     char *opts, char *op)
@@ -7148,6 +7183,7 @@ initoptions_init(void)
     /* initialize the function pointers for saving the game */
     sf_init();
     allopt_array_init();
+    i18n_init();
     /* if windowtype has been specified on the command line, set it up
        early so windowtype-specific options use it as their base */
     if (gc.cmdline_windowsys) {

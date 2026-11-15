@@ -300,6 +300,7 @@ VOBJ23 = $(O)trap.o     $(O)u_init.o   $(O)uhitm.o    $(O)utf8map.o  $(O)vault.o
 VOBJ24 = $(O)track.o    $(O)vision.o   $(O)weapon.o   $(O)were.o     $(O)wield.o
 VOBJ25 = $(O)windows.o  $(O)wintty.o   $(O)wizard.o   $(O)wizcmds.o  $(O)worm.o
 VOBJ26 = $(O)worn.o     $(O)write.o    $(O)zap.o      $(O)light.o    $(O)dlb.o $(REGEX)
+VOBJ27 = $(O)i18n.o
 
 SOBJ   = $(O)msdos.o    $(O)pcsys.o    $(O)tty.o      $(O)unix.o \
 	 $(O)video.o    $(O)vidtxt.o   $(O)pckeys.o
@@ -321,7 +322,7 @@ VOBJ  = $(VOBJ01) $(VOBJ02) $(VOBJ03) $(VOBJ04) $(VOBJ05) \
 	$(VOBJ11) $(VOBJ12) $(VOBJ13) $(VOBJ14) $(VOBJ15) \
 	$(VOBJ16) $(VOBJ17) $(VOBJ18) $(VOBJ19) $(VOBJ20) \
 	$(VOBJ21) $(VOBJ22) $(VOBJ23) $(VOBJ24) $(VOBJ25) \
-	$(VOBJ26) $(CURSESOBJ) $(LUAOBJ)
+	$(VOBJ26) $(VOBJ27) $(CURSESOBJ) $(LUAOBJ)
 
 ALLOBJ = $(VOBJ) $(SOBJ) $(TILOBJ) $(TILOBJ2) $(VVOBJ)
 
@@ -639,6 +640,7 @@ $(GAMEFILE): $(O)obj.tag $(PATCHLEV_H) $(PDCLIB) $(LUATARGETS) \
 	 @ar ruS temp.a $(VOBJ24)
 	 @ar ruS temp.a $(VOBJ25)
 	 @ar ruS temp.a $(VOBJ26)
+	 @ar ruS temp.a $(VOBJ27)
 	 @ar ruS temp.a $(SOBJ)
 	 @ar ruS temp.a $(TILOBJ)
 	 @ar ruS temp.a $(TILOBJ2)
@@ -1404,6 +1406,7 @@ $(TARGETPFX)files.o: files.c $(HACK_H) ../include/dlb.h ../include/wintty.h \
 $(TARGETPFX)fountain.o: fountain.c $(HACK_H)
 $(TARGETPFX)hack.o: hack.c $(HACK_H)
 $(TARGETPFX)hacklib.o: hacklib.c $(HACK_H)
+$(TARGETPFX)i18n.o: i18n.c $(HACK_H)
 $(TARGETPFX)iactions.o: iactions.c $(HACK_H)
 $(TARGETPFX)insight.o: insight.c $(HACK_H)
 $(TARGETPFX)invent.o: invent.c $(HACK_H)

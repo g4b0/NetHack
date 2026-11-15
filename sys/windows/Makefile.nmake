@@ -590,7 +590,8 @@ HACKCSRC = \
 	$(SRC)drawing.c  $(SRC)dungeon.c  $(SRC)earlyarg.c $(SRC)eat.c \
 	$(SRC)end.c      $(SRC)engrave.c  $(SRC)exper.c    $(SRC)explode.c \
 	$(SRC)files.c    $(SRC)fountain.c $(SRC)getpos.c   $(SRC)glyphs.c \
-	$(SRC)hack.c     $(SRC)iactions.c $(SRC)insight.c  $(SRC)invent.c \
+	$(SRC)hack.c     $(SRC)i18n.c     $(SRC)iactions.c $(SRC)insight.c \
+	$(SRC)invent.c \
 	$(SRC)isaac64.c  $(SRC)light.c    $(SRC)lock.c     $(SRC)mail.c \
 	$(SRC)makemon.c  $(SRC)mcastu.c   $(SRC)mdlib.c    $(SRC)mhitm.c \
 	$(SRC)mhitu.c    $(SRC)minion.c   $(SRC)mklev.c    $(SRC)mkmap.c \
@@ -794,6 +795,7 @@ COREOBJTTY = \
 	$(OTTY)end.o      $(OTTY)engrave.o  $(OTTY)exper.o    $(OTTY)explode.o \
 	$(OTTY)extralev.o $(OTTY)files.o    $(OTTY)fountain.o $(OTTY)getpos.o \
 	$(OTTY)glyphs.o   $(OTTY)iactions.o $(OTTY)hack.o     $(OTTY)insight.o \
+	$(OTTY)i18n.o \
 	$(OTTY)invent.o   $(OTTY)isaac64.o  $(OTTY)light.o    $(OTTY)lock.o \
 	$(OTTY)mail.o     $(OTTY)makemon.o  $(OTTY)mcastu.o   $(OTTY)mhitm.o \
 	$(OTTY)mhitu.o    $(OTTY)minion.o   $(OTTY)mklev.o    $(OTTY)mkmap.o \
@@ -857,6 +859,7 @@ COREOBJGUI = \
 	$(OGUI)end.o      $(OGUI)engrave.o  $(OGUI)exper.o    $(OGUI)explode.o \
 	$(OGUI)extralev.o $(OGUI)files.o    $(OGUI)fountain.o $(OGUI)getpos.o \
 	$(OGUI)glyphs.o   $(OGUI)iactions.o $(OGUI)hack.o     $(OGUI)insight.o \
+	$(OGUI)i18n.o \
 	$(OGUI)invent.o   $(OGUI)isaac64.o  $(OGUI)light.o    $(OGUI)lock.o \
 	$(OGUI)mail.o     $(OGUI)makemon.o  $(OGUI)mcastu.o   $(OGUI)mhitm.o \
 	$(OGUI)mhitu.o    $(OGUI)minion.o   $(OGUI)mklev.o    $(OGUI)mkmap.o \
@@ -3155,6 +3158,7 @@ $(OTTY)getpos.o: getpos.c $(HACK_H)
 $(OTTY)glyphs.o: glyphs.c $(HACK_H)
 $(OTTY)hack.o: hack.c $(HACK_H)
 $(OTTY)hacklib.o: hacklib.c $(HACK_H)
+$(OTTY)i18n.o: i18n.c $(HACK_H) $(INCL)dlb.h
 $(OTTY)iactions.o: iactions.c $(HACK_H)
 $(OTTY)insight.o: insight.c $(HACK_H)
 $(OTTY)invent.o: invent.c $(HACK_H)
@@ -3537,6 +3541,7 @@ $(OGUI)getpos.o: getpos.c $(HACK_H)
 $(OGUI)glyphs.o: glyphs.c $(HACK_H)
 $(OGUI)hack.o: hack.c $(HACK_H)
 $(OGUI)hacklib.o: hacklib.c $(HACK_H)
+$(OGUI)i18n.o: i18n.c $(HACK_H) $(INCL)dlb.h
 $(OGUI)iactions.o: iactions.c $(HACK_H)
 $(OGUI)insight.o: insight.c $(HACK_H)
 $(OGUI)invent.o: invent.c $(HACK_H)

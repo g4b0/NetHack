@@ -64,6 +64,9 @@ staticfn int nhl_utf8_len(lua_State *);
 staticfn int nhl_utf8_cut(lua_State *);
 staticfn int nhl_utf8_cutbytes(lua_State *);
 staticfn int nhl_utf8_prev(lua_State *);
+staticfn int nhl_gettext(lua_State *);
+staticfn int nhl_ngettext(lua_State *);
+staticfn int nhl_language(lua_State *);
 staticfn int nhl_rn2(lua_State *);
 staticfn int nhl_random(lua_State *);
 staticfn int nhl_level_difficulty(lua_State *);
@@ -1021,6 +1024,57 @@ nhl_utf8_prev(lua_State *L)
     luaL_argcheck(L, off >= 0 && (size_t) off <= len, 2, "bad offset");
     lua_pushinteger(L, utf8_prev(str, str + off) - str);
     return 1;
+}
+
+/* gettext("msgid") or gettext("msgid", "context") */
+staticfn int
+nhl_gettext(lua_State *L)
+{
+    int argc = lua_gettop(L);
+
+    if (argc == 1)
+        lua_pushstring(L, i18n_gettext(luaL_checkstring(L, 1)));
+    else if (argc == 2)
+        lua_pushstring(L, i18n_pgettext(luaL_checkstring(L, 2),
+                                        luaL_checkstring(L, 1)));
+    else
+        nhl_error(L, "Wrong args");
+
+    return 1;
+}
+
+/* ngettext("one thing", "many things", 3) */
+staticfn int
+nhl_ngettext(lua_State *L)
+{
+    int argc = lua_gettop(L);
+
+    if (argc == 3)
+        lua_pushstring(L, i18n_ngettext(luaL_checkstring(L, 1),
+                                        luaL_checkstring(L, 2),
+                                        (long) luaL_checkinteger(L, 3)));
+    else
+        nhl_error(L, "Wrong args");
+
+    return 1;
+}
+
+/* language() returns the current language code, "" for none;
+   language("it") loads that language first; the second result is the
+   number of catalog entries that could not be used */
+staticfn int
+nhl_language(lua_State *L)
+{
+    int argc = lua_gettop(L);
+
+    if (argc > 1)
+        nhl_error(L, "Wrong args");
+    if (argc == 1)
+        (void) i18n_set_language(luaL_checkstring(L, 1));
+    lua_pushstring(L, i18n_language());
+    lua_pushinteger(L, i18n_skipped());
+
+    return 2;
 }
 
 /* rn2(10) */
@@ -1986,6 +2040,9 @@ static const struct luaL_Reg nhl_functions[] = {
     { "utf8_cut", nhl_utf8_cut },
     { "utf8_cutbytes", nhl_utf8_cutbytes },
     { "utf8_prev", nhl_utf8_prev },
+    { "gettext", nhl_gettext },
+    { "ngettext", nhl_ngettext },
+    { "language", nhl_language },
     { "rn2", nhl_rn2 },
     { "random", nhl_random },
     { "level_difficulty", nhl_level_difficulty },

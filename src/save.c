@@ -1216,6 +1216,7 @@ freedynamicdata(void)
     free_convert_filenames();
 #endif /* FREE_ALL_MEMORY */
     free_nhuuid();
+    i18n_free();
 
     if (VIA_WINDOWPORT())
         status_finish();

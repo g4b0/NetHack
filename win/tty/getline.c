@@ -21,9 +21,41 @@ static boolean ext_cmd_getlin_hook(char *);
 typedef boolean (*getlin_hook_proc)(char *);
 
 static void hooked_tty_getlin(const char *, char *, getlin_hook_proc);
+static void getlin_redraw(const char *, const char *);
 extern int extcmd_via_menu(void); /* cmd.c */
 
 extern char erase_char, kill_char; /* from appropriate tty.c file */
+
+/* bytes read ahead and not used yet (a LIFO, at most 4 long) */
+static int ungot[4], nungot;
+
+static int
+getlin_getc(void)
+{
+    return nungot ? ungot[--nungot] : pgetchar();
+}
+
+static void
+getlin_ungetc(int c)
+{
+    if (nungot < SIZE(ungot))
+        ungot[nungot++] = c;
+}
+
+/* redraw the prompt and the text typed so far; used instead of erasing on
+   screen when that would have to back up over a line wrap, where the
+   position of the end of the previous row depends on the characters */
+static void
+getlin_redraw(const char *query, const char *text)
+{
+    struct WinDesc *cw = wins[WIN_MESSAGE];
+
+    tty_clear_nhwindow(WIN_MESSAGE);
+    cw->maxcol = cw->maxrow;
+    addtopl(query);
+    addtopl(" ");
+    addtopl(text);
+}
 
 /*
  * Read a line closed with '\n' into the array char bufp[BUFSZ].
@@ -46,7 +78,9 @@ hooked_tty_getlin(
     getlin_hook_proc hook)
 {
     char *obufp = bufp;
-    int c;
+    int c, k, w, mblen;
+    boolean wrapped;
+    char mb[5];
     struct WinDesc *cw = wins[WIN_MESSAGE];
     boolean doprev = FALSE;
 
@@ -55,6 +89,7 @@ hooked_tty_getlin(
     cw->flags &= ~WIN_STOP;
     ttyDisplay->toplin = TOPLINE_SPECIAL_PROMPT;
     ttyDisplay->inread++;
+    nungot = 0;
 
     /*
      * Issue the prompt.
@@ -80,7 +115,32 @@ hooked_tty_getlin(
         (void) fflush(stdout);
         Strcat(strcat(strcpy(gt.toplines, query), " "), obufp);
         term_curs_set(1);
-        c = pgetchar();
+        c = getlin_getc();
+        /* a multibyte character is collected here, before anything is
+           echoed, so that its bytes reach the terminal together */
+        mb[0] = (char) c;
+        mblen = 1;
+        if ((uchar) c >= 0xC2 && (uchar) c <= 0xF4) {
+            int need = ((uchar) c < 0xE0) ? 2 : ((uchar) c < 0xF0) ? 3 : 4;
+            int extra = -2; /* not a byte: nothing was read ahead */
+
+            while (mblen < need) {
+                k = getlin_getc();
+                if (!utf8_is_cont(k)) {
+                    extra = k; /* not part of it; use it next time */
+                    break;
+                }
+                mb[mblen++] = (char) k;
+            }
+            mb[mblen] = '\0';
+            if (extra != -2)
+                getlin_ungetc(extra);
+            if (mblen < need || utf8_decode(mb, (int *) 0) != mblen) {
+                /* not UTF-8 after all: one byte at a time, as ever */
+                while (mblen > 1)
+                    getlin_ungetc(mb[--mblen]);
+            }
+        }
         term_curs_set(0);
         if (c == '\033' || c == EOF) {
             if (c == EOF)
@@ -139,20 +199,32 @@ hooked_tty_getlin(
             *bufp = 0;
             addtopl(obufp);
         }
+        /* is there anything but ASCII typed, on more than one row? */
+        wrapped = (ttyDisplay->cury > 0
+                   && utf8_width(obufp) != (int) strlen(obufp));
         if (c == erase_char || c == '\b') {
             if (bufp != obufp) {
-#ifdef NEWAUTOCOMP
-                char *i;
+                /* back up over one character and its combining marks */
+                char *prev = (char *) utf8_prev(obufp, bufp);
 
-#endif /* NEWAUTOCOMP */
-                bufp--;
+                w = utf8_nwidth(prev, (size_t) (bufp - prev));
+                bufp = prev;
+                if (wrapped) {
+                    *bufp = 0;
+                    getlin_redraw(query, obufp);
+                    continue;
+                }
 #ifndef NEWAUTOCOMP
-                putsyms("\b \b"); /* putsym converts \b */
+                for (k = w; k > 0; --k)
+                    putsyms("\b \b"); /* putsym converts \b */
 #else                             /* NEWAUTOCOMP */
-                putsyms("\b");
-                for (i = bufp; *i; ++i)
+                for (k = w; k > 0; --k)
+                    putsyms("\b");
+                /* blank the removed character and any guess after it */
+                w = utf8_width(bufp);
+                for (k = w; k > 0; --k)
                     putsyms(" ");
-                for (; i > bufp; --i)
+                for (k = w; k > 0; --k)
                     putsyms("\b");
                 *bufp = 0;
 #endif                            /* NEWAUTOCOMP */
@@ -166,45 +238,52 @@ hooked_tty_getlin(
         } else if (' ' <= (unsigned char) c && c != '\177'
                    /* avoid isprint() - some people don't have it
                       ' ' is not always a printing char */
-                   && (bufp - obufp < BUFSZ - 1 && bufp - obufp < COLNO)) {
+                   && (bufp - obufp + mblen < BUFSZ
+                       && utf8_nwidth(obufp, (size_t) (bufp - obufp))
+                          < COLNO)) {
 #ifdef NEWAUTOCOMP
-            char *i = eos(bufp);
+            int tailw = utf8_width(bufp); /* columns of the guess */
 
 #endif /* NEWAUTOCOMP */
-            *bufp = c;
-            bufp[1] = 0;
+            (void) memcpy(bufp, mb, (size_t) mblen);
+            bufp[mblen] = 0;
+            w = utf8_width(bufp);
             putsyms(bufp);
-            bufp++;
+            bufp += mblen;
             if (hook && (*hook)(obufp)) {
                 putsyms(bufp);
 #ifndef NEWAUTOCOMP
                 bufp = eos(bufp);
 #else  /* NEWAUTOCOMP */
                 /* pointer and cursor left where they were */
-                for (i = bufp; *i; ++i)
+                for (k = utf8_width(bufp); k > 0; --k)
                     putsyms("\b");
-            } else if (i > bufp) {
-                char *s = i;
-
+            } else if (tailw > w) {
                 /* erase rest of prior guess */
-                for (; i > bufp; --i)
+                for (k = tailw - w; k > 0; --k)
                     putsyms(" ");
-                for (; s > bufp; --s)
+                for (k = tailw - w; k > 0; --k)
                     putsyms("\b");
 #endif /* NEWAUTOCOMP */
             }
         } else if (c == kill_char || c == '\177') { /* Robert Viduya */
             /* this test last - @ might be the kill_char */
-#ifndef NEWAUTOCOMP
-            while (bufp != obufp) {
-                bufp--;
-                putsyms("\b \b");
+            if (wrapped) {
+                bufp = obufp;
+                *bufp = 0;
+                getlin_redraw(query, obufp);
+                continue;
             }
-#else  /* NEWAUTOCOMP */
-            for (; *bufp; ++bufp)
-                putsyms(" ");
-            for (; bufp != obufp; --bufp)
+#ifndef NEWAUTOCOMP
+            for (k = utf8_width(obufp); k > 0; --k)
                 putsyms("\b \b");
+            bufp = obufp;
+#else  /* NEWAUTOCOMP */
+            for (k = utf8_width(bufp); k > 0; --k)
+                putsyms(" ");
+            for (k = utf8_width(obufp); k > 0; --k)
+                putsyms("\b \b");
+            bufp = obufp;
             *bufp = 0;
 #endif /* NEWAUTOCOMP */
         } else
@@ -317,8 +396,9 @@ tty_get_ext_cmd(void)
               : extcmds_match(buf, ECM_IGNOREAC | ECM_EXACTMATCH, &ecmatches);
     if (nmatches != 1) {
         if (nmatches != -1)
-            pline("%s%.60s: unknown extended command.",
-                  visctrl(extcmd_char[0]), buf);
+            pline("%s%.*s: unknown extended command.",
+                  visctrl(extcmd_char[0]), (int) utf8_cut_bytes(buf, 60),
+                  buf);
         return -1;
     }
 

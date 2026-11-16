@@ -548,6 +548,9 @@ tty_init_nhwindows(int *argcp UNUSED, char **argv UNUSED)
     ttyDisplay->topl_utf8 = 0;
     ttyDisplay->mixed = 0;
 
+    /* menu lines may use tabs between columns; tty_end_menu() aligns them */
+    iflags.menu_tab_sep = TRUE;
+
     /* set up the default windows */
     BASE_WINDOW = tty_create_nhwindow(NHW_BASE);
     wins[BASE_WINDOW]->active = 1;
@@ -2244,7 +2247,7 @@ void
 tty_putstr(winid window, int attr, const char *str)
 {
     struct WinDesc *cw = 0;
-    char *ob;
+    char *ob, tabbuf[BUFSZ];
     long i, n0;
 #ifndef STATUS_HILITES
     const char *nb;
@@ -2263,6 +2266,12 @@ tty_putstr(winid window, int attr, const char *str)
     if (str == (const char *) 0
         || ((cw->flags & WIN_CANCELLED) && (cw->type != NHW_MESSAGE)))
         return;
+    /* a tab would move the terminal's cursor without tty knowing */
+    if (strchr(str, '\t')) {
+        (void) strncpy(tabbuf, str, sizeof tabbuf - 1);
+        tabbuf[sizeof tabbuf - 1] = '\0';
+        str = tabexpand(tabbuf);
+    }
     if (cw->type != NHW_MESSAGE
 #ifdef TTY_PERM_INVENT
         && window != WIN_INVEN
@@ -2669,6 +2678,110 @@ reverse(tty_menu_item *curr)
 
 static color_attr tty_menu_promptstyle = { NO_COLOR, ATR_NONE };
 
+#define TTY_MAXCOLS 12 /* tab separated columns we align; the rest is text */
+
+/* Menu lines may have fields separated by tabs.  Replace the tabs by spaces
+   so that the fields of all such lines line up, with two columns between
+   one column and the next.  The last field of a line is not padded.  Lines
+   without a tab are not touched.  A line which can't be picked has no "x - "
+   in front of it; if some line can be picked and the line is not indented
+   already, indent it to where the text of the selectable lines starts.  */
+static void
+tty_tab_columns(struct WinDesc *cw)
+{
+    tty_menu_item *curr;
+    int width[TTY_MAXCOLS], start[TTY_MAXCOLS + 1], fit, gap, ncols = 0;
+    int i, n, pos, maxend = 0;
+    boolean any_pick = FALSE, any_tab = FALSE;
+    char *p, *q, *buf;
+    size_t len;
+
+    for (curr = cw->mlist; curr; curr = curr->next) {
+        if (curr->identifier.a_void)
+            any_pick = TRUE;
+        if (strchr(curr->str, '\t'))
+            any_tab = TRUE;
+    }
+    if (!any_tab)
+        return;
+
+    (void) memset(width, 0, sizeof width);
+    /* first pass: width of each column, last field of a line excluded */
+    for (curr = cw->mlist; curr; curr = curr->next) {
+        if (!strchr(curr->str, '\t'))
+            continue;
+        pos = (!curr->identifier.a_void && any_pick && curr->str[0] != ' ')
+              ? 4 : 0;
+        for (n = 0, p = curr->str; (q = strchr(p, '\t')) != 0
+                                   && n < TTY_MAXCOLS - 1; n++, p = q + 1) {
+            fit = utf8_nwidth(p, (size_t) (q - p)) + (n == 0 ? pos : 0);
+            if (fit > width[n])
+                width[n] = fit;
+            if (n + 1 > ncols)
+                ncols = n + 1;
+        }
+    }
+    /* the widest line must fit in the window, or give up one of the two
+       columns between columns before the end of lines gets cut */
+    for (gap = 2; gap >= 1; --gap) {
+        maxend = 0;
+        for (curr = cw->mlist; curr; curr = curr->next) {
+            if (!strchr(curr->str, '\t'))
+                continue;
+            for (n = 0, p = curr->str, pos = 0; ; n++, p = q + 1) {
+                q = strchr(p, '\t');
+                if (!q || n >= TTY_MAXCOLS - 1)
+                    break;
+                pos += width[n] + gap;
+            }
+            fit = pos + utf8_width(p);
+            if (fit > maxend)
+                maxend = fit;
+        }
+        if (maxend <= (int) ttyDisplay->cols - 2)
+            break;
+    }
+    if (gap < 1)
+        gap = 1;
+    start[0] = 0;
+    for (i = 0; i < ncols; i++)
+        start[i + 1] = start[i] + width[i] + gap;
+
+    /* second pass: rewrite the lines */
+    for (curr = cw->mlist; curr; curr = curr->next) {
+        if (!strchr(curr->str, '\t'))
+            continue;
+        len = strlen(curr->str) + (size_t) start[ncols] + 8;
+        buf = (char *) alloc((unsigned) len);
+        buf[0] = '\0';
+        pos = 0;
+        if (!curr->identifier.a_void && any_pick && curr->str[0] != ' ') {
+            Strcpy(buf, "    ");
+            pos = 4;
+        }
+        for (n = 0, p = curr->str; ; n++, p = q + 1) {
+            q = strchr(p, '\t');
+            if (!q) {
+                Strcat(buf, p);
+                break;
+            }
+            *q = '\0';
+            Strcat(buf, p);
+            pos += utf8_width(p);
+            if (n < TTY_MAXCOLS - 1) {
+                /* pad to the start of the next column */
+                for (; pos < start[n + 1]; pos++)
+                    Strcat(buf, " ");
+            } else {
+                Strcat(buf, " "); /* more fields than columns: just a gap */
+                pos++;
+            }
+        }
+        free((genericptr_t) curr->str);
+        curr->str = buf;
+    }
+}
+
 /*
  * End a menu in this window, window must a type NHW_MENU.  This routine
  * processes the string list.  We calculate the # of pages, then assign
@@ -2706,6 +2819,8 @@ tty_end_menu(
 
     /* Reverse the list so that items are in correct order. */
     cw->mlist = reverse(cw->mlist);
+
+    tty_tab_columns(cw);
 
     /* Put the prompt at the beginning of the menu. */
     if (prompt) {

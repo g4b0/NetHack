@@ -448,7 +448,7 @@ tabexpand(
 {
     char buf[BUFSZ + 10];
     char *bp, *s = sbuf;
-    int idx;
+    int idx, n;
 
     if (!*s)
         return sbuf;
@@ -465,11 +465,21 @@ tabexpand(
             do
                 *bp++ = ' ';
             while (++idx % 8);
-        } else {
+        } else if ((uchar) *s < 0x80) {
             *bp++ = *s;
             ++idx;
+        } else {
+            /* a UTF-8 character is several bytes but one tab stop column
+               (or two or none: wide, combining) */
+            int cp;
+
+            n = utf8_decode(s, &cp);
+            idx += (n > 1) ? utf8_cpwidth(cp) : 1;
+            while (--n > 0)
+                *bp++ = *s++;
+            *bp++ = *s;
         }
-        if (idx >= BUFSZ) {
+        if (idx >= BUFSZ || bp - buf >= BUFSZ) {
             bp = &buf[BUFSZ - 1];
             break;
         }
